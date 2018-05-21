@@ -8,6 +8,94 @@ import PropTypes from 'prop-types';
 import Color from 'color';
 import parseSVG from 'svg-path-parser';
 
+const onMouse = component => (area, evt) => {
+  const down = evt.getDown();
+  const up = evt.getUp();
+  if (up) {
+    component.props.onMouseUp({
+      x: evt.getX(),
+      y: evt.getY(),
+      width: evt.getAreaWidth(),
+      height: evt.getAreaHeight(),
+      button: up,
+    });
+  } else if (down) {
+    component.props.onMouseDown({
+      x: evt.getX(),
+      y: evt.getY(),
+      width: evt.getAreaWidth(),
+      height: evt.getAreaHeight(),
+      button: down,
+      count: evt.getCount(),
+    });
+  } else {
+    const buttons = [];
+    const held = evt.getHeld1To64();
+    if (held > 0) {
+      for (let i = 0; i <= 6; i++) {
+        if (held & Math.pow(2, i)) buttons.push(i + 1);
+        if (!(held >> (i + 1))) break;
+      }
+    }
+    component.props.onMouseMove({
+      x: evt.getX(),
+      y: evt.getY(),
+      width: evt.getAreaWidth(),
+      height: evt.getAreaHeight(),
+      buttons,
+    });
+  }
+};
+
+const onKey = component => (area, event) => {
+  let extKey = event.getExtKey();
+  if (extKey) {
+    for (let k of Object.keys(libui.extKeys)) {
+      if (extKey == libui.extKeys[k]) {
+        extKey = k;
+        break;
+      }
+    }
+  }
+
+  let modifierKey = event.getModifier();
+  if (modifierKey) {
+    for (let k of Object.keys(libui.modifierKeys)) {
+      if (modifierKey == libui.modifierKeys[k]) {
+        modifierKey = k;
+        break;
+      }
+    }
+  }
+
+  let modifiers = event.getModifiers();
+  let modifiersList = [];
+
+  if (modifiers) {
+    for (let k of Object.keys(libui.modifierKeys)) {
+      if (modifiers & libui.modifierKeys[k]) {
+        modifiersList.push(k);
+      }
+    }
+  }
+
+  if (event.getUp()) {
+    return component.props.onKeyUp({
+      key: event.getKey(),
+      extKey,
+      modifierKey,
+      modifiers: modifiersList,
+    });
+  } else {
+    return component.props.onKeyDown({
+      key: event.getKey(),
+      extKey,
+      modifierKey,
+      modifiers: modifiersList,
+    });
+  }
+};
+
 class Area extends DesktopComponent {
   constructor(root, props) {
     super(root, props);
@@ -23,43 +111,7 @@ class Area extends DesktopComponent {
           }
         }
       },
-      (area, evt) => {
-        const down = evt.getDown();
-        const up = 0; //evt.getUp();
-        if (up) {
-          this.props.onMouseUp({
-            x: evt.getX(),
-            y: evt.getY(),
-            width: evt.getAreaWidth(),
-            height: evt.getAreaHeight(),
-            button: up,
-          });
-        } else if (down) {
-          this.props.onMouseDown({
-            x: evt.getX(),
-            y: evt.getY(),
-            width: evt.getAreaWidth(),
-            height: evt.getAreaHeight(),
-            button: down,
-          });
-        } else {
-          const buttons = [];
-          const held = evt.getHeld1To64();
-          if (held > 0) {
-            for (let i = 0; i <= 6; i++) {
-              if (held & Math.pow(2, i)) buttons.push(i + 1);
-              if (!(held >> (i + 1))) break;
-            }
-          }
-          this.props.onMouseMove({
-            x: evt.getX(),
-            y: evt.getY(),
-            width: evt.getAreaWidth(),
-            height: evt.getAreaHeight(),
-            buttons,
-          });
-        }
-      },
+      onMouse(this),
       (area, inOut) => {
         if (inOut === 0) {
           this.props.onMouseEnter();
@@ -68,23 +120,7 @@ class Area extends DesktopComponent {
         }
       },
       function dragBroken() {},
-      (area, event) => {
-        if (event.getUp()) {
-          return this.props.onKeyUp({
-            key: event.getKey(),
-            extKey: event.getExtKey(),
-            modifierKey: event.getModifier(),
-            modifiers: event.getModifiers(),
-          });
-        } else {
-          return this.props.onKeyDown({
-            key: event.getKey(),
-            extKey: event.getExtKey(),
-            modifierKey: event.getModifier(),
-            modifiers: event.getModifiers(),
-          });
-        }
-      }
+      onKey(this)
     );
   }
 
@@ -101,7 +137,7 @@ class Area extends DesktopComponent {
   }
 }
 
-Area.PropTypes = {
+Area.propTypes = {
   ...universalPropTypes,
   onMouseMove: PropTypes.func,
   onMouseUp: PropTypes.func,
@@ -148,7 +184,7 @@ function createBrush(color, alpha) {
     color.blue() / 255,
     color.alpha() * alpha
   );
-  brush.type = 0 /*uiDrawBrushTypeSolid*/;
+  brush.type = libui.brushType.solid;
 
   return brush;
 }
@@ -168,7 +204,7 @@ class AreaComponent {
       }
     }
     PropTypes.checkPropTypes(
-      this.constructor.PropTypes,
+      this.constructor.propTypes,
       this.props,
       'prop',
       this.constructor.name
@@ -304,11 +340,16 @@ class AreaComponent {
             p
           );
           if (process.platform === 'win32') {
-            mat.scale(xy.x, xy.y, scale[1], fallback(scale[2], scale[1]));
+            mat.scale(
+              xy.x,
+              xy.y,
+              Number(scale[1]),
+              fallback(scale[2], scale[1])
+            );
           } else {
             // https://github.com/andlabs/libui/issues/331:
             mat.translate(xy.x, xy.y);
-            mat.scale(0, 0, scale[1], fallback(scale[2], scale[1]));
+            mat.scale(0, 0, Number(scale[1]), fallback(scale[2], scale[1]));
             mat.translate(-xy.x, -xy.y);
           }
         }
@@ -364,25 +405,25 @@ class AreaComponent {
 
         switch (props.strokeLinecap) {
           case 'flat':
-            sp.cap = 0;
+            sp.cap = libui.lineCap.flat;
             break;
           case 'round':
-            sp.cap = 1;
+            sp.cap = libui.lineCap.round;
             break;
           case 'square':
-            sp.cap = 2;
+            sp.cap = libui.lineCap.square;
             break;
         }
 
         switch (props.strokeLinejoin) {
           case 'miter':
-            sp.join = 0;
+            sp.join = libui.lineJoin.miter;
             break;
           case 'round':
-            sp.join = 1;
+            sp.join = libui.lineJoin.round;
             break;
           case 'bevel':
-            sp.join = 2;
+            sp.join = libui.lineJoin.bevel;
             break;
         }
 
@@ -391,13 +432,13 @@ class AreaComponent {
 
         p.getContext().stroke(path, strokeBrush, sp);
 
-        //sp.free();
-        //strokBrush.free();
+        sp.free();
+        strokeBrush.free();
       }
 
       if (fillBrush) {
         p.getContext().fill(path, fillBrush);
-        //fillBrush.free();
+        fillBrush.free();
       }
 
       path.freePath();
@@ -451,7 +492,7 @@ Area.Group = class AreaGroup extends AreaComponent {
   }
 };
 
-Area.Group.PropTypes = {
+Area.Group.propTypes = {
   ...AreaComponentPropTypes,
   width: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
   height: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
@@ -467,7 +508,7 @@ Area.Rectangle = class Rectangle extends AreaComponent {
   }
 
   draw(area, p) {
-    const path = new libui.UiDrawPath(0 /*uiDrawFillModeWinding*/);
+    const path = new libui.UiDrawPath(libui.fillMode.winding);
     path.addRectangle(
       this.parseParent(this.props.x, p),
       this.parseParent(this.props.y, p, true),
@@ -479,7 +520,7 @@ Area.Rectangle = class Rectangle extends AreaComponent {
   }
 };
 
-Area.Rectangle.PropTypes = {
+Area.Rectangle.propTypes = {
   ...AreaComponentPropTypes,
   x: PropTypes.oneOfType([PropTypes.number, PropTypes.string]).isRequired,
   y: PropTypes.oneOfType([PropTypes.number, PropTypes.string]).isRequired,
@@ -502,7 +543,7 @@ Area.Line = class Line extends AreaComponent {
   }
 
   draw(area, p) {
-    const path = new libui.UiDrawPath(0 /*uiDrawFillModeWinding*/);
+    const path = new libui.UiDrawPath(libui.fillMode.winding);
     path.newFigure(
       this.parseParent(this.props.x1, p),
       this.parseParent(this.props.y1, p, true)
@@ -517,7 +558,7 @@ Area.Line = class Line extends AreaComponent {
   }
 };
 
-Area.Line.PropTypes = {
+Area.Line.propTypes = {
   ...AreaComponentPropTypes,
   x1: PropTypes.oneOfType([PropTypes.number, PropTypes.string]).isRequired,
   y1: PropTypes.oneOfType([PropTypes.number, PropTypes.string]).isRequired,
@@ -535,7 +576,7 @@ Area.Arc = class Arc extends AreaComponent {
   }
 
   draw(area, p) {
-    const path = new libui.UiDrawPath(0 /*uiDrawFillModeWinding*/);
+    const path = new libui.UiDrawPath(libui.fillMode.winding);
     path.newFigureWithArc(
       this.parseParent(this.props.x, p),
       this.parseParent(this.props.y, p, true),
@@ -549,7 +590,7 @@ Area.Arc = class Arc extends AreaComponent {
   }
 };
 
-Area.Arc.PropTypes = {
+Area.Arc.propTypes = {
   ...AreaComponentPropTypes,
   x: PropTypes.oneOfType([PropTypes.number, PropTypes.string]).isRequired,
   y: PropTypes.oneOfType([PropTypes.number, PropTypes.string]).isRequired,
@@ -573,7 +614,7 @@ Area.Circle = class Circle extends AreaComponent {
   }
 
   draw(area, p) {
-    const path = new libui.UiDrawPath(0 /*uiDrawFillModeWinding*/);
+    const path = new libui.UiDrawPath(libui.fillMode.winding);
     path.newFigureWithArc(
       this.parseParent(this.props.x, p),
       this.parseParent(this.props.y, p, true),
@@ -587,7 +628,7 @@ Area.Circle = class Circle extends AreaComponent {
   }
 };
 
-Area.Circle.PropTypes = {
+Area.Circle.propTypes = {
   ...AreaComponentPropTypes,
   x: PropTypes.oneOfType([PropTypes.number, PropTypes.string]).isRequired,
   y: PropTypes.oneOfType([PropTypes.number, PropTypes.string]).isRequired,
@@ -600,7 +641,7 @@ Area.Circle.defaultProps = {
 
 Area.Bezier = class Bezier extends AreaComponent {
   draw(area, p) {
-    const path = new libui.UiDrawPath(0 /*uiDrawFillModeWinding*/);
+    const path = new libui.UiDrawPath(libui.fillMode.winding);
     path.newFigure(
       this.parseParent(this.props.x1, p),
       this.parseParent(this.props.y1, p, true)
@@ -619,7 +660,7 @@ Area.Bezier = class Bezier extends AreaComponent {
   }
 };
 
-Area.Bezier.PropTypes = {
+Area.Bezier.propTypes = {
   ...AreaComponentPropTypes,
   x1: PropTypes.oneOfType([PropTypes.number, PropTypes.string]).isRequired,
   y1: PropTypes.oneOfType([PropTypes.number, PropTypes.string]).isRequired,
@@ -634,7 +675,9 @@ Area.Bezier.PropTypes = {
 Area.Path = class Path extends AreaComponent {
   draw(area, p) {
     const path = new libui.UiDrawPath(
-      this.props.fillRule === 'evenodd' ? 1 : 0
+      this.props.fillRule === 'evenodd'
+        ? libui.fillMode.alternate
+        : libui.fillMode.winding
     );
     const commands = parseSVG(this.props.d);
     parseSVG.makeAbsolute(commands);
@@ -681,7 +724,7 @@ Area.Path = class Path extends AreaComponent {
   }
 };
 
-Area.Path.PropTypes = {
+Area.Path.propTypes = {
   ...AreaComponentPropTypes,
   d: PropTypes.string.isRequired,
   fillRule: PropTypes.oneOf(['nonzero', 'evenodd']),

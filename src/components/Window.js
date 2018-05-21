@@ -4,6 +4,7 @@ import DesktopComponent, {
 } from './DesktopComponent';
 import libui from 'libui-node';
 import PropTypes from 'prop-types';
+import { disconnectDevtools } from '../devtools';
 
 var CURRENT_WINDOW = null;
 
@@ -65,6 +66,7 @@ class Window extends DesktopComponent {
         this.props.onClose();
         this.element.close();
         if (this.props.lastWindow) {
+          disconnectDevtools();
           libui.stopLoop();
         }
       });
@@ -89,7 +91,7 @@ class Window extends DesktopComponent {
   }
 }
 
-Window.PropTypes = {
+Window.propTypes = {
   title: PropTypes.string,
   size: PropTypes.shape({
     h: PropTypes.number,
